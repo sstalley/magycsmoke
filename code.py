@@ -13,6 +13,7 @@ from analogio import AnalogIn
 
 print(dir(board))
 
+target_voltage = 3.1
 
 switch = digitalio.DigitalInOut(board.D1)  # For Circuit Playground Express
 switch.direction = digitalio.Direction.INPUT
@@ -33,7 +34,25 @@ def get_voltage(pin):
     vdiv = rv1 / (rv1 + rv2)
     return (pin.value * 3.3) / 65536 / vdiv
 
+# calculate what percentage time to leave the battery on
+# use square to get equal power
+def get_period(v_battery, v_goal):
+    p_goal = v_goal * v_goal
+    p_actual = v_battery * v_battery
+    return min(p_goal / p_actual, 1.0)
+
+pwm = pwmio.PWMOut(board.D0, duty_cycle=0, frequency=420)
+
+def adjust_pwm(period):
+    global pwm
+    # you can't give >100%
+    duty_cycle = min(int(period*(2**16)), 2**16-1)
+    # print("period:", period, "duty cycle:", duty_cycle)
+    pwm.duty_cycle = duty_cycle
+
+
 b_voltage = get_voltage(analog_in)
+
 
 def rainbow_cycle(wait):
     global old_value
@@ -48,17 +67,22 @@ def rainbow_cycle(wait):
 
         b_voltage = get_voltage(analog_in)
         if not (b_voltage == old_b_voltage):
-            print("Battery Voltage:", "{:.2f}".format(b_voltage))
+            print("Battery Voltage:", "{:.3f}".format(b_voltage))
             old_b_voltage = b_voltage
+            # If we are on, adjust the pwm too
+            if not switch.value:
+                period = get_period(b_voltage, target_voltage)
+                print("Adjusting duty cycle to ", "{:.2f}".format(period*100), "%")
+                adjust_pwm(period)
 
         if not (switch.value == old_value):
             if not switch.value:
                 print("Turning On")
-                pwm = pwmio.PWMOut(board.D0, duty_cycle=int(0.95*(2**16)), frequency=420)
+                adjust_pwm(get_period(b_voltage, target_voltage))
 
             else:
                 print("Turning Off")
-                pwm.deinit()
+                adjust_pwm(0.0)
 
             old_value = switch.value
         time.sleep(wait)
