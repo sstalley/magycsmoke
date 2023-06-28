@@ -6,14 +6,24 @@
 import time
 import board
 from rainbowio import colorwheel
-import neopixel
+#import neopixel
 import pwmio
 import digitalio
 from analogio import AnalogIn
 
 print(dir(board))
 
-target_voltage = 3.1
+from seeed_xiao_nrf52840 import Battery, IMU
+
+with Battery() as bat:
+    print("Battery.charge_status:", bat.charge_status)
+    print("Battery.charge_current:", bat.charge_current)
+    print("Battery.voltage:", bat.voltage)
+    bat.charge_current = bat.CHARGE_100MA
+    print("Battery.charge_current:", bat.charge_current)
+
+
+target_voltage = 3.7
 
 switch = digitalio.DigitalInOut(board.D1)  # For Circuit Playground Express
 switch.direction = digitalio.Direction.INPUT
@@ -22,10 +32,9 @@ old_value = switch.value
 
 pwm = None
 
-pixel_pin = board.NEOPIXEL
-num_pixels = 1
-
-pixels = neopixel.NeoPixel(pixel_pin, num_pixels, brightness=0.1, auto_write=False)
+# pixel_pin = board.NEOPIXEL
+# num_pixels = 1
+# pixels = neopixel.NeoPixel(pixel_pin, num_pixels, brightness=0.1, auto_write=False)
 
 analog_in = AnalogIn(board.A2)
 
@@ -51,21 +60,25 @@ def adjust_pwm(period):
     pwm.duty_cycle = duty_cycle
 
 
-b_voltage = get_voltage(analog_in)
+b_voltage = board.VBATT #get_voltage(analog_in)
 
+charge_status = board.CHARGE_STATUS
 
 def rainbow_cycle(wait):
     global old_value
     global pwm
     global b_voltage
+    global charge_status
     old_b_voltage = b_voltage
+    old_charge_status = charge_status
     for j in range(255):
-        for i in range(num_pixels):
-            rc_index = (i * 256 // num_pixels) + j
-            pixels[i] = colorwheel(rc_index & 255)
-        pixels.show()
-
-        b_voltage = get_voltage(analog_in)
+    #    for i in range(num_pixels):
+    #        rc_index = (i * 256 // num_pixels) + j
+    #        pixels[i] = colorwheel(rc_index & 255)
+    #    pixels.show()
+    #    pixels.show()
+        with Battery() as bat:
+            b_voltage = bat.voltage
         if not (b_voltage == old_b_voltage):
             print("Battery Voltage:", "{:.3f}".format(b_voltage))
             old_b_voltage = b_voltage
@@ -74,6 +87,12 @@ def rainbow_cycle(wait):
                 period = get_period(b_voltage, target_voltage)
                 print("Adjusting duty cycle to ", "{:.2f}".format(period*100), "%")
                 adjust_pwm(period)
+
+        charge_status = board.CHARGE_STATUS
+        if not (b_voltage == old_b_voltage):
+            print("Battery Voltage:", "{:.3f}".format(b_voltage))
+            old_b_voltage = b_voltage
+
 
         if not (switch.value == old_value):
             if not switch.value:
@@ -85,6 +104,10 @@ def rainbow_cycle(wait):
                 adjust_pwm(0.0)
 
             old_value = switch.value
+
+        #with IMU() as imu:
+        #    print(imu.acceleration)
+
         time.sleep(wait)
 
 
